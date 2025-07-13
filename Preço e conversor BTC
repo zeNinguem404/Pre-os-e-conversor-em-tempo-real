@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cripto Monitor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0e0e0e;
+      color: #fff;
+      text-align: center;
+      padding: 30px;
+    }
+    .container {
+      max-width: 440px;
+      margin: auto;
+      background: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    }
+    h1 {
+      margin-bottom: 10px;
+      font-size: 1.4em;
+      white-space: nowrap;
+    }
+    .price-box {
+      margin: 15px 0;
+      font-size: 1.4em;
+      padding: 10px;
+      border-radius: 8px;
+      background-color: #222;
+    }
+    .label {
+      font-size: 0.85em;
+      color: #aaa;
+    }
+    .btc, .btcusdt {
+      color: #f7931a;
+    }
+    .usdt {
+      color: #26a17b;
+    }
+    input, select {
+      padding: 8px;
+      width: 80%;
+      margin: 8px auto;
+      font-size: 1em;
+      border-radius: 6px;
+      border: none;
+      text-align: center;
+    }
+    .convert-result {
+      font-size: 0.9em;
+      margin-bottom: 15px;
+      color: #ccc;
+    }
+    .variation {
+      font-size: 0.65em;
+      margin-top: 4px;
+    }
+    .up { color: #4fff54; }
+    .down { color: #ff4b4b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>💰 Preços em tempo real</h1>
+
+    <div class="price-box">
+      <div class="label">Bitcoin (BTC/USDT)</div>
+      <div class="btcusdt" id="btc-usdt">Carregando...</div>
+      <div class="variation" id="btc-usdt-var"></div>
+    </div>
+
+    <div class="price-box">
+      <div class="label">Bitcoin (BTC/BRL)</div>
+      <div class="btc" id="btc-brl">Carregando...</div>
+      <div class="variation" id="btc-brl-var"></div>
+    </div>
+
+    <div class="price-box">
+      <div class="label">Tether (USDT/BRL)</div>
+      <div class="usdt" id="usdt-brl">Carregando...</div>
+      <div class="variation" id="usdt-brl-var"></div>
+    </div>
+
+    <h3>📊 Variação (%)</h3>
+    <select id="variation-period">
+      <option value="1h">1H</option>
+      <option value="24h" selected>1D</option>
+      <option value="7d">1S</option>
+      <option value="30d">1M</option>
+      <option value="1y">1Y</option>
+      <option value="all">ALL</option>
+    </select>
+
+    <h2 style="margin-top: 25px;">🔄 Conversor</h2>
+    <input type="number" id="input-value" placeholder="Digite um valor" />
+    <select id="input-type">
+      <option value="brl">R$ (BRL)</option>
+      <option value="usdt">USDT</option>
+      <option value="btc">BTC</option>
+    </select>
+    <div class="convert-result" id="convert-output">Resultado aparecerá aqui</div>
+
+    <div style="font-size: 0.8em; margin-top: 10px; color: #666;">Fonte: Binance & Coingecko APIs</div>
+  </div>
+
+  <script>
+    let prices = { btcusdt: 0, btcbrl: 0, usdtbrl: 0 };
+
+    async function fetchPrices() {
+      try {
+        const resBinance = await Promise.all([
+          fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"),
+          fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCBRL"),
+          fetch("https://api.binance.com/api/v3/ticker/price?symbol=USDTBRL")
+        ]);
+        const [btcUsdt, btcBrl, usdtBrl] = await Promise.all(resBinance.map(r => r.json()));
+
+        prices.btcusdt = parseFloat(btcUsdt.price);
+        prices.btcbrl = parseFloat(btcBrl.price);
+        prices.usdtbrl = parseFloat(usdtBrl.price);
+
+        document.getElementById("btc-usdt").innerText = "US$ " + prices.btcusdt.toLocaleString('en-US', { minimumFractionDigits: 2 });
+        document.getElementById("btc-brl").innerText = "R$ " + prices.btcbrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+        document.getElementById("usdt-brl").innerText = "R$ " + prices.usdtbrl.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+        convertValue();
+      } catch (e) {
+        console.error("Erro Binance", e);
+      }
+    }
+
+    async function fetchVariations(period = "24h") {
+      try {
+        const btcRes = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin");
+        const usdtRes = await fetch("https://api.coingecko.com/api/v3/coins/tether");
+        const btcData = await btcRes.json();
+        const usdtData = await usdtRes.json();
+
+        const btcUsd = getVariation(btcData, period, "usd");
+        const btcBrl = getVariation(btcData, period, "brl");
+        const usdtBrl = getVariation(usdtData, period, "brl");
+
+        showVar("btc-usdt-var", btcUsd);
+        showVar("btc-brl-var", btcBrl);
+        showVar("usdt-brl-var", usdtBrl);
+      } catch (e) {
+        console.error("Erro Coingecko", e);
+      }
+    }
+
+    function getVariation(data, period, currency) {
+      const p = data.market_data;
+      switch (period) {
+        case "1h": return p.price_change_percentage_1h_in_currency[currency];
+        case "24h": return p.price_change_percentage_24h_in_currency[currency];
+        case "7d": return p.price_change_percentage_7d_in_currency[currency];
+        case "30d": return p.price_change_percentage_30d_in_currency[currency];
+        case "1y": return p.price_change_percentage_1y_in_currency[currency];
+        case "all":
+          const atl = p.atl[currency];
+          const now = p.current_price[currency];
+          return ((now - atl) / atl) * 100;
+      }
+    }
+
+    function showVar(id, value) {
+      const el = document.getElementById(id);
+      if (value === undefined || isNaN(value)) {
+        el.innerText = "–";
+        return;
+      }
+      const formatted = Math.abs(value).toFixed(2) + "%";
+      el.innerHTML = value >= 0
+        ? `<span class="up">↑ ${formatted}</span>`
+        : `<span class="down">↓ ${formatted}</span>`;
+    }
+
+    function convertValue() {
+      const value = parseFloat(document.getElementById("input-value").value);
+      const type = document.getElementById("input-type").value;
+      const output = document.getElementById("convert-output");
+
+      if (isNaN(value) || value <= 0) {
+        output.innerText = "Digite um valor válido.";
+        return;
+      }
+
+      let brl, btc, usdt;
+
+      if (type === "brl") {
+        usdt = value / prices.usdtbrl;
+        btc = value / prices.btcbrl;
+        output.innerText = `≈ ${usdt.toFixed(2)} USDT | ${btc.toFixed(6)} BTC`;
+      } else if (type === "usdt") {
+        brl = value * prices.usdtbrl;
+        btc = value / prices.btcusdt;
+        output.innerText = `≈ R$ ${brl.toFixed(2)} | ${btc.toFixed(6)} BTC`;
+      } else if (type === "btc") {
+        brl = value * prices.btcbrl;
+        usdt = value * prices.btcusdt;
+        output.innerText = `≈ R$ ${brl.toFixed(2)} | ${usdt.toFixed(2)} USDT`;
+      }
+    }
+
+    document.getElementById("input-value").addEventListener("input", convertValue);
+    document.getElementById("input-type").addEventListener("change", convertValue);
+    document.getElementById("variation-period").addEventListener("change", e => fetchVariations(e.target.value));
+
+    fetchPrices();
+    fetchVariations();
+    setInterval(fetchPrices, 5000);
+  </script>
+</body>
+</html>
